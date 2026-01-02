@@ -1,0 +1,196 @@
+{
+  "name": "@noyrax/5d-database-plugin",
+  "displayName": "5D Database Plugin",
+  "description": "5-dimensional database layer for documentation system with semantic brain integration. Provides SQLite databases for modules, symbols, dependencies, ADRs, and changes. Includes semantic search and MCP server integration for AI agents.",
+  "version": "0.1.14-beta.5",
+  "publisher": "noyrax",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/noyrax/noyrax.git",
+    "directory": "5d-database-plugin"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "documentation",
+    "database",
+    "semantic-search",
+    "mcp",
+    "llm",
+    "ai",
+    "code-analysis",
+    "architecture",
+    "5d-database",
+    "noyrax"
+  ],
+  "files": [
+    "out/",
+    "schemas/",
+    "README.md",
+    "LICENSE",
+    "package.json",
+    "MCP_SERVER_SETUP.md",
+    "SETUP_NEW_PROJECT.md",
+    "CHROMADB_SETUP.md",
+    "QUICK_START.md",
+    "ADR_VORSCHLAEGE.md",
+    "SYSTEM_ANALYSIS_REPORT.md",
+    "INSTALLATION_READINESS.md",
+    "MCP_SERVER_TEST_REPORT.md",
+    "KNOWN_ISSUES.md",
+    "IMPROVEMENT_ROADMAP.md",
+    "NOYRAX_INTEGRATION.md",
+    "NOYRAX_WORKSPACE_INTEGRATION.md"
+  ],
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "exports": {
+    ".": "./out/extension.js",
+    "./api": "./out/api/index.js"
+  },
+  "bin": {
+    "noyrax-5d-database": "./out/cli/ingest-cli.js",
+    "noyrax-5d-database-mcp": "./out/cli/mcp-server-cli.js",
+    "noyrax-5d-database-query": "./out/cli/query-cli.js",
+    "noyrax-5d-database-tool": "./out/cli/tool-cli.js",
+    "noyrax-5d-database-search": "./out/cli/semantic-search-cli.js",
+    "noyrax-5d-database-embedding": "./out/cli/embedding-cli.js",
+    "noyrax-5d-database-debug-plugin-id": "./out/cli/debug-plugin-id.js"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "5d-database.ingest",
+        "title": "Ingest Documentation"
+      },
+      {
+        "command": "5d-database.search",
+        "title": "Semantic Search"
+      },
+      {
+        "command": "5d-database.showModuleDetail",
+        "title": "Show Module Detail"
+      },
+      {
+        "command": "5d-database.showSymbolDetail",
+        "title": "Show Symbol Detail"
+      },
+      {
+        "command": "5d-database.showAdrDetail",
+        "title": "Show ADR Detail"
+      },
+      {
+        "command": "5d-database.showDependencyDetail",
+        "title": "Show Dependency Detail"
+      },
+      {
+        "command": "5d-database.showChangeDetail",
+        "title": "Show Change Report Detail"
+      },
+      {
+        "command": "5d-database.openSourceFile",
+        "title": "Open Source File"
+      },
+      {
+        "command": "5d-database.generate-docs",
+        "title": "Generate Documentation (Noyrax)"
+      },
+      {
+        "command": "5d-database.full-workflow",
+        "title": "Full Workflow (Generate + Ingest)"
+      },
+      {
+        "command": "5d-database.merge-workspaces",
+        "title": "Merge Workspaces (Combine Both Systems)"
+      }
+    ],
+    "menus": {
+      "view/item/context": [
+        {
+          "command": "5d-database.openSourceFile",
+          "when": "view == 5d-database-explorer && viewItem == module",
+          "group": "navigation"
+        },
+        {
+          "command": "5d-database.openSourceFile",
+          "when": "view == 5d-database-explorer && viewItem == symbol",
+          "group": "navigation"
+        },
+        {
+          "command": "5d-database.openSourceFile",
+          "when": "view == 5d-database-explorer && viewItem == dependency",
+          "group": "navigation"
+        }
+      ]
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "5d-database-explorer",
+          "name": "5D Database Explorer"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "postcompile": "npm run scan && npm run validate && npm run verify:adrs",
+    "scan": "cd .. && noyrax-scan",
+    "validate": "cd .. && noyrax-validate",
+    "verify:adrs": "cd .. && noyrax-verify-adrs",
+    "verify:architecture": "cd .. && noyrax-verify-architecture",
+    "verify:imports": "cd .. && noyrax-verify-imports",
+    "verify:all": "npm run compile && npm run verify:architecture && npm run verify:imports",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository",
+    "prepublishOnly": "npm run compile",
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "test:v-dimension": "node out/cli/test-v-dimension.js",
+    "test:chromadb": "node out/cli/test-chromadb.js",
+    "verify:openai-key": "node out/cli/verify-openai-key.js",
+    "verify:vss-status": "node out/cli/verify-vss-status.js",
+    "merge:workspaces": "node out/cli/merge-workspaces-cli.js"
+  },
+  "dependencies": {
+    "@chroma-core/default-embed": "^0.1.9",
+    "@modelcontextprotocol/sdk": "^1.25.1",
+    "chromadb": "^3.2.0",
+    "dotenv": "^16.4.5",
+    "openai": "^6.15.0",
+    "sqlite-vss": "^0.1.2",
+    "sqlite3": "^5.1.6",
+    "uuid": "^9.0.1",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/dotenv": "^6.1.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "16.x",
+    "@types/uuid": "^10.0.0",
+    "@types/vscode": "^1.74.0",
+    "@vscode/vsce": "^2.22.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.1.6"
+  },
+  "peerDependencies": {
+    "@noyrax/documentation-system-plugin": "*"
+  },
+  "peerDependenciesMeta": {
+    "@noyrax/documentation-system-plugin": {
+      "optional": true,
+      "description": "Documentation System Plugin (Noyrax) must be installed and docs/ must be generated before using 5D Database Plugin"
+    }
+  }
+}
