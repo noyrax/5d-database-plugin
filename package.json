@@ -153,7 +153,7 @@
     "verify:all": "npm run compile && npm run verify:architecture && npm run verify:imports",
     "watch": "tsc -watch -p ./",
     "package": "vsce package --allow-missing-repository",
-    "prepublishOnly": "npm run compile",
+    "prepublishOnly": "tsc -p ./",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:v-dimension": "node out/cli/test-v-dimension.js",
