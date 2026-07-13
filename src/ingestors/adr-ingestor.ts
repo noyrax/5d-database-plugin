@@ -7,6 +7,7 @@ import { Dimension } from '../core/multi-db-manager';
 import { MultiDbManager } from '../core/multi-db-manager';
 import { AdrRepository } from '../repositories/adr-repository';
 import { Adr, AdrFileMapping } from '../models/adr';
+import { PathNormalizer } from '../core/path-normalizer';
 
 /**
  * Ingests ADRs from docs/adr/*.md (W-Dimension)
@@ -288,8 +289,7 @@ export class AdrIngestor implements BaseIngestor {
         while ((match = backtickPattern.exec(content)) !== null) {
             const filePath = match[1];
                 if (filePath && !filePath.startsWith('http') && !filePath.startsWith('mailto:') && !filePath.startsWith('#')) {
-                    let normalizedPath = filePath.trim().replace(/\\/g, '/');
-                    const finalPath = this.normalizeFilePath(normalizedPath, workspaceRoot);
+                    const finalPath = this.normalizeFilePath(filePath, workspaceRoot);
                     if (finalPath) {
                         filePaths.push(finalPath);
                     }
@@ -302,8 +302,7 @@ export class AdrIngestor implements BaseIngestor {
         while ((match = linkPattern.exec(content)) !== null) {
             const filePath = match[2]; // Use the URL part, not the link text
                 if (filePath && !filePath.startsWith('http') && !filePath.startsWith('mailto:') && !filePath.startsWith('#')) {
-                    let normalizedPath = filePath.trim().replace(/\\/g, '/');
-                    const finalPath = this.normalizeFilePath(normalizedPath, workspaceRoot);
+                    const finalPath = this.normalizeFilePath(filePath, workspaceRoot);
                     if (finalPath) {
                         filePaths.push(finalPath);
                     }
@@ -316,8 +315,7 @@ export class AdrIngestor implements BaseIngestor {
         while ((match = directPathPattern.exec(content)) !== null) {
             const filePath = match[0];
                 if (filePath && !filePath.startsWith('http') && !filePath.startsWith('mailto:') && !filePath.startsWith('#')) {
-                    let normalizedPath = filePath.trim().replace(/\\/g, '/');
-                    const finalPath = this.normalizeFilePath(normalizedPath, workspaceRoot);
+                    const finalPath = this.normalizeFilePath(filePath, workspaceRoot);
                     if (finalPath) {
                         filePaths.push(finalPath);
                     }
@@ -337,8 +335,9 @@ export class AdrIngestor implements BaseIngestor {
             return null;
         }
         
-        // Normalize path: ensure forward slashes, remove leading/trailing whitespace
-        let normalizedPath = filePath.trim().replace(/\\/g, '/');
+        // Normalize path: use PathNormalizer (case-preserving)
+        const trimmed = filePath.trim();
+        let normalizedPath = PathNormalizer.normalizePath(trimmed);
         
         // If path starts with src/ and doesn't have plugin prefix, try to find the correct format
         if (normalizedPath.startsWith('src/') && !normalizedPath.startsWith('5d-database-plugin/')) {

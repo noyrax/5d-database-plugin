@@ -226,28 +226,35 @@ export class MigrationManager {
         return new Promise((resolve, reject) => {
             db.exec(sql, (err) => {
                 if (err) {
-                    reject(new Error(`Failed to apply migration ${version}_${name}: ${err.message}`));
-                } else {
-                    // Use INSERT OR IGNORE to handle race conditions
-                    // If migration already exists, it will be silently ignored
-                    db.run(
-                        'INSERT OR IGNORE INTO migrations (version, name) VALUES (?, ?)',
-                        [version, name],
-                        (insertErr) => {
-                            if (insertErr) {
-                                // If it's a UNIQUE constraint error, migration already exists - that's OK
-                                if (insertErr.message.includes('UNIQUE constraint')) {
-                                    console.log(`[MigrationManager] Migration ${version}_${name} already exists, skipping insert`);
-                                    resolve();
-                                } else {
-                                    reject(insertErr);
-                                }
-                            } else {
-                                resolve();
-                            }
-                        }
-                    );
+                    // Ignore "duplicate column" errors - columns may already exist from previous migrations
+                    // This can happen when migrations are split or renamed
+                    if (err.message.includes('duplicate column')) {
+                        console.log(`[MigrationManager] Migration ${version}_${name}: Column already exists, skipping: ${err.message}`);
+                        // Continue to insert migration record even if column already exists
+                    } else {
+                        reject(new Error(`Failed to apply migration ${version}_${name}: ${err.message}`));
+                        return;
+                    }
                 }
+                // Use INSERT OR IGNORE to handle race conditions
+                // If migration already exists, it will be silently ignored
+                db.run(
+                    'INSERT OR IGNORE INTO migrations (version, name) VALUES (?, ?)',
+                    [version, name],
+                    (insertErr) => {
+                        if (insertErr) {
+                            // If it's a UNIQUE constraint error, migration already exists - that's OK
+                            if (insertErr.message.includes('UNIQUE constraint')) {
+                                console.log(`[MigrationManager] Migration ${version}_${name} already exists, skipping insert`);
+                                resolve();
+                            } else {
+                                reject(insertErr);
+                            }
+                        } else {
+                            resolve();
+                        }
+                    }
+                );
             });
         });
     }
@@ -269,7 +276,30 @@ export class MigrationManager {
                 const dimensionPrefix = this.getDimensionPrefix(dimension);
                 return file.startsWith(dimensionPrefix);
             })
-            .sort();
+            .sort((a, b) => {
+                // Extract version number
+                const versionMatchA = a.match(/^(\d+)_/);
+                const versionMatchB = b.match(/^(\d+)_/);
+                if (!versionMatchA || !versionMatchB) {
+                    return a.localeCompare(b);
+                }
+                const versionA = parseInt(versionMatchA[1], 10);
+                const versionB = parseInt(versionMatchB[1], 10);
+                
+                // Sort by version first
+                if (versionA !== versionB) {
+                    return versionA - versionB;
+                }
+                
+                // For same version, prioritize "initial_" migrations
+                const isInitialA = a.includes('_initial_');
+                const isInitialB = b.includes('_initial_');
+                if (isInitialA && !isInitialB) return -1;
+                if (!isInitialA && isInitialB) return 1;
+                
+                // Otherwise, sort alphabetically
+                return a.localeCompare(b);
+            });
 
         return files;
     }

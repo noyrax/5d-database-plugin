@@ -13,8 +13,8 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
 
     public async create(symbol: Symbol): Promise<Symbol> {
         await this.execute(
-            `INSERT INTO symbols (id, plugin_id, symbol_id, path, kind, name, signature_json, signature_hash, summary, deleted_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO symbols (id, plugin_id, symbol_id, path, kind, name, signature_json, signature_hash, summary, start_line, end_line, start_col, end_col, byte_offset_start, byte_offset_end, deleted_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 symbol.id,
                 symbol.plugin_id,
@@ -25,6 +25,12 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
                 symbol.signature_json,
                 symbol.signature_hash,
                 symbol.summary,
+                symbol.start_line,
+                symbol.end_line,
+                symbol.start_col,
+                symbol.end_col,
+                symbol.byte_offset_start,
+                symbol.byte_offset_end,
                 symbol.deleted_at,
                 symbol.created_at,
                 symbol.updated_at
@@ -48,7 +54,7 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
 
     public async getBySymbolId(symbolId: string, pluginId: string): Promise<Symbol | null> {
         const row = await this.queryOne<any>(
-            `SELECT * FROM symbols WHERE symbol_id = ? AND plugin_id = ?`,
+            `SELECT * FROM symbols WHERE symbol_id = ? AND plugin_id = ? AND deleted_at IS NULL`,
             [symbolId, pluginId]
         );
 
@@ -62,7 +68,7 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
     public async update(symbol: Symbol): Promise<Symbol> {
         await this.execute(
             `UPDATE symbols 
-             SET path = ?, kind = ?, name = ?, signature_json = ?, signature_hash = ?, summary = ?, deleted_at = ?, updated_at = ?
+             SET path = ?, kind = ?, name = ?, signature_json = ?, signature_hash = ?, summary = ?, start_line = ?, end_line = ?, start_col = ?, end_col = ?, byte_offset_start = ?, byte_offset_end = ?, deleted_at = ?, updated_at = ?
              WHERE id = ? AND plugin_id = ?`,
             [
                 symbol.path,
@@ -71,6 +77,12 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
                 symbol.signature_json,
                 symbol.signature_hash,
                 symbol.summary,
+                symbol.start_line,
+                symbol.end_line,
+                symbol.start_col,
+                symbol.end_col,
+                symbol.byte_offset_start,
+                symbol.byte_offset_end,
                 symbol.deleted_at,
                 symbol.updated_at,
                 symbol.id,
@@ -180,6 +192,12 @@ export class SymbolRepository extends BaseRepositoryImpl<Symbol> {
             signature_json: row.signature_json,
             signature_hash: row.signature_hash,
             summary: row.summary,
+            start_line: row.start_line !== null && row.start_line !== undefined ? row.start_line : null,
+            end_line: row.end_line !== null && row.end_line !== undefined ? row.end_line : null,
+            start_col: row.start_col !== null && row.start_col !== undefined ? row.start_col : null,
+            end_col: row.end_col !== null && row.end_col !== undefined ? row.end_col : null,
+            byte_offset_start: row.byte_offset_start !== null && row.byte_offset_start !== undefined ? row.byte_offset_start : null,
+            byte_offset_end: row.byte_offset_end !== null && row.byte_offset_end !== undefined ? row.byte_offset_end : null,
             deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
             created_at: new Date(row.created_at),
             updated_at: new Date(row.updated_at)

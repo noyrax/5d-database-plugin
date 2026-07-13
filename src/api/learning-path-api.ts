@@ -8,6 +8,8 @@ import { NavigationRepository } from '../repositories/navigation-repository';
 import { EntityReference } from '../models/entity-reference';
 import { Module } from '../models/module';
 import { Dependency } from '../models/dependency';
+import { Evidence } from '../models/evidence';
+import { EvidenceGrader } from './evidence-grader';
 
 /**
  * Learning path step
@@ -26,6 +28,7 @@ export interface LearningPath {
     topic: string;
     path: LearningPathStep[];
     estimated_time?: string;  // e.g., "5-10 minutes"
+    evidence?: Evidence;
 }
 
 /**
@@ -38,6 +41,7 @@ export class LearningPathApi {
     private dependencyApi: DependencyApi;
     private moduleApi: ModuleApi;
     private adrApi: AdrApi;
+    private evidenceGrader: EvidenceGrader;
 
     constructor(
         dbManager: MultiDbManager,
@@ -48,6 +52,7 @@ export class LearningPathApi {
         this.dependencyApi = new DependencyApi(dbManager);
         this.moduleApi = new ModuleApi(dbManager);
         this.adrApi = new AdrApi(dbManager);
+        this.evidenceGrader = new EvidenceGrader();
     }
 
     /**
@@ -61,8 +66,6 @@ export class LearningPathApi {
         topic: string,
         pluginId: string
     ): Promise<LearningPath> {
-        console.log(`[LearningPathApi] Generating learning path for topic: "${topic}"`);
-
         // 1. Semantic search for topic
         const relevantEntities = await this.semanticSearchApi.search(topic, pluginId, {
             limit: 20
@@ -85,10 +88,26 @@ export class LearningPathApi {
         // 4. Estimate time (rough: 2-3 minutes per step)
         const estimatedTime = path.length > 0 ? `${path.length * 2}-${path.length * 3} minutes` : '0 minutes';
 
+        // Create evidence: INFERRED from semantic search and dependency analysis
+        const evidence = this.evidenceGrader.gradeAsInferred(
+            [
+                {
+                    type: 'DB_QUERY',
+                    path: 'semantic_search'
+                },
+                {
+                    type: 'DB_QUERY',
+                    path: 'dependency_analysis'
+                }
+            ],
+            'Learning path derived from semantic search results and dependency analysis'
+        );
+
         return {
             topic,
             path,
-            estimated_time: estimatedTime
+            estimated_time: estimatedTime,
+            evidence
         };
     }
 

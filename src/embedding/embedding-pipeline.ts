@@ -11,6 +11,7 @@ import { Symbol } from '../models/symbol';
 import { Dependency } from '../models/dependency';
 import { Adr } from '../models/adr';
 import { ChangeReport, SymbolChange, DependencyChange } from '../models/change';
+import { ModuleSummarizer } from './module-summarizer';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 
@@ -26,6 +27,7 @@ export class EmbeddingPipeline {
     private dependencyApi: DependencyApi;
     private adrApi: AdrApi;
     private changeApi: ChangeApi;
+    private moduleSummarizer: ModuleSummarizer;
 
     constructor(dbManager: MultiDbManager, embeddingGenerator: EmbeddingGenerator) {
         this.dbManager = dbManager;
@@ -35,6 +37,7 @@ export class EmbeddingPipeline {
         this.dependencyApi = new DependencyApi(dbManager);
         this.adrApi = new AdrApi(dbManager);
         this.changeApi = new ChangeApi(dbManager);
+        this.moduleSummarizer = new ModuleSummarizer();
     }
 
     /**
@@ -103,7 +106,14 @@ export class EmbeddingPipeline {
         const toGenerate: Array<{ entity: any; content: string; contentHash: string }> = [];
 
         for (const entity of entities) {
-            const content = this.extractContentForEmbedding(dimension, entity);
+            const content = await this.extractContentForEmbedding(dimension, entity);
+            
+            // Überspringe leere Content (z.B. extrem große Dateien, die nicht embeddet werden können)
+            if (!content || content.trim().length === 0) {
+                console.warn(`[EmbeddingPipeline] Skipping embedding for entity ${entity.id} in dimension ${dimension} (empty content)`);
+                continue;
+            }
+            
             const contentHash = this.computeContentHash(content);
 
             const existing = existingMap.get(entity.id);
@@ -133,7 +143,7 @@ export class EmbeddingPipeline {
                     continue;
                 }
 
-                // Convert array to Buffer (1536 floats = 1536 * 4 bytes = 6144 bytes)
+                // Convert array to Buffer (1024 floats = 1024 * 4 bytes = 4096 bytes)
                 const vectorBuffer = Buffer.from(new Float32Array(embeddingVector).buffer);
 
                 const existing = existingMap.get(item.entity.id);
@@ -240,12 +250,56 @@ export class EmbeddingPipeline {
     /**
      * Extracts content for embedding based on dimension.
      */
-    private extractContentForEmbedding(dimension: 'X' | 'Y' | 'Z' | 'W' | 'T', entity: any): string {
+    private async extractContentForEmbedding(dimension: 'X' | 'Y' | 'Z' | 'W' | 'T', entity: any): Promise<string> {
         switch (dimension) {
             case 'X': {
                 // X (Modules): Full markdown content
                 const module = entity as Module;
-                return module.content_markdown;
+                let content = module.content_markdown;
+                
+                // TOKEN-LIMIT-CHECK: Voyage voyage-3.5 erlaubt 32K Token; wir bleiben konservativ.
+                const tokenEstimate = this.estimateTokens(content);
+                const maxTokens = 8000; // Konservatives Limit (weit unter Voyage 32K)
+                
+                if (tokenEstimate > maxTokens) {
+                    console.warn(`[EmbeddingPipeline] Large module documentation: ${module.file_path} (~${tokenEstimate} tokens, max ${maxTokens})`);
+                    
+                    // Für extrem große Dateien (>15000 Tokens): Verwende hierarchical Strategie automatisch
+                    if (tokenEstimate > 15000) {
+                        console.warn(`[EmbeddingPipeline] Extremely large module (>15000 tokens), using hierarchical strategy`);
+                        content = this.extractModuleStructure(content);
+                        const newTokenEstimate = this.estimateTokens(content);
+                        if (newTokenEstimate > maxTokens) {
+                            console.error(`[EmbeddingPipeline] Module still too large after hierarchical extraction (~${newTokenEstimate} tokens). Skipping embedding.`);
+                            // Überspringe Embedding für diese Datei - gib leeren String zurück
+                            return '';
+                        }
+                        return content;
+                    }
+                    
+                    // STRATEGIE-AUSWAHL: Intelligente Kürzung, Hierarchische Embeddings, oder Summarization
+                    const strategy = process.env.EMBEDDING_STRATEGY || 'optimize';
+                    
+                    if (strategy === 'summarize' && this.moduleSummarizer.isConfigured()) {
+                        console.warn(`[EmbeddingPipeline] Using LLM-based summarization strategy...`);
+                        try {
+                            content = await this.moduleSummarizer.summarizeModuleContent(content, module.file_path);
+                            const newTokenEstimate = this.estimateTokens(content);
+                            console.log(`[EmbeddingPipeline] Summarized to ~${newTokenEstimate} tokens`);
+                        } catch (error) {
+                            console.error(`[EmbeddingPipeline] Summarization failed, falling back to optimization: ${error}`);
+                            content = this.optimizeModuleContentForEmbedding(content, maxTokens);
+                        }
+                    } else if (strategy === 'hierarchical') {
+                        console.warn(`[EmbeddingPipeline] Using hierarchical embedding strategy...`);
+                        content = this.extractModuleStructure(content);
+                    } else {
+                        console.warn(`[EmbeddingPipeline] Optimizing content for embedding...`);
+                        content = this.optimizeModuleContentForEmbedding(content, maxTokens);
+                    }
+                }
+                
+                return content;
             }
             case 'Y': {
                 // Y (Symbols): {name} {signature} {dependencies_summary}
@@ -265,9 +319,18 @@ export class EmbeddingPipeline {
             case 'W': {
                 // W (ADRs): {title} {content} {linked_files}
                 const adr = entity as Adr;
-                // Extract linked files from content (simple pattern matching)
-                const fileMatches = adr.content_markdown.match(/src\/[^\s\)]+/g) || [];
-                const filesStr = fileMatches.length > 0 ? `\nLinked files: ${fileMatches.join(', ')}` : '';
+                
+                // Get file mappings from database (instead of regex pattern matching)
+                const adrDb = await this.dbManager.getDatabase('W');
+                const { AdrRepository } = await import('../repositories/adr-repository');
+                const adrRepo = new AdrRepository(adrDb);
+                const fileMappings = await adrRepo.getAdrFileMappings(adr.id);
+                
+                // Structured file list
+                const filesStr = fileMappings.length > 0 
+                    ? `\n\nLinked files: ${fileMappings.map(m => m.file_path).join(', ')}`
+                    : '';
+                
                 return `${adr.title}\n${adr.content_markdown}${filesStr}`;
             }
             case 'T': {
@@ -304,6 +367,270 @@ export class EmbeddingPipeline {
      */
     private computeContentHash(content: string): string {
         return crypto.createHash('sha256').update(content).digest('hex');
+    }
+
+    /**
+     * Estimates token count from content length (Markdown-optimized).
+     * Markdown has different token densities:
+     * - Code blocks: ~3 chars/token (more tokens per char due to formatting)
+     * - Normal text: ~4 chars/token (standard estimate)
+     * - Tables: ~2.5 chars/token (many separators increase token count)
+     */
+    private estimateTokens(content: string): number {
+        // Match code blocks (```...```)
+        const codeBlockMatches = content.match(/```[\s\S]*?```/g) || [];
+        const codeBlockLength = codeBlockMatches.reduce((sum, block) => sum + block.length, 0);
+        
+        // Match table rows (|...|)
+        const tableMatches = content.match(/\|.*\|/g) || [];
+        const tableLength = tableMatches.reduce((sum, line) => sum + line.length, 0);
+        
+        // Normal text (everything else)
+        const normalLength = content.length - codeBlockLength - tableLength;
+        
+        // Calculate tokens for each type
+        const codeTokens = Math.ceil(codeBlockLength / 3); // Code blocks: ~3 chars/token
+        const tableTokens = Math.ceil(tableLength / 2.5); // Tables: ~2.5 chars/token
+        const normalTokens = Math.ceil(normalLength / 4); // Normal text: ~4 chars/token
+        
+        return codeTokens + tableTokens + normalTokens;
+    }
+
+    /**
+     * Optimizes module documentation for embedding while preserving semantic meaning.
+     * Strategy: Keep structure and important information, remove detailed tables.
+     * Aggressively truncates code blocks to signatures only, limits table rows.
+     * 
+     * @param content Full markdown content
+     * @param maxTokens Maximum tokens allowed
+     * @returns Optimized content
+     */
+    private optimizeModuleContentForEmbedding(content: string, maxTokens: number): string {
+        const lines = content.split('\n');
+        const optimized: string[] = [];
+        let currentTokens = 0;
+        const maxTokensWithMargin = maxTokens * 0.95; // 5% Margin für Sicherheit
+        
+        let inCodeBlock = false;
+        let codeBlockStartLine = -1;
+        let codeBlockOpener = '';
+        let interfaceCount = 0;
+        let methodCount = 0;
+        let tableRowCount = 0;
+        let tableHeaderSkipped = false;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const lineTokens = this.estimateTokens(line);
+            
+            // Prüfe Token-Anzahl während Iteration (frühe Kürzung)
+            if (currentTokens + lineTokens > maxTokensWithMargin) {
+                // Versuche bei logischem Punkt zu kürzen
+                if (inCodeBlock) {
+                    // Kürze Code-Block: Behalte nur erste Zeile (Signatur)
+                    if (codeBlockStartLine >= 0 && i > codeBlockStartLine) {
+                        const codeBlockLines = lines.slice(codeBlockStartLine + 1, i);
+                        const firstLine = codeBlockLines.find(l => l.trim() && !l.startsWith('```'));
+                        if (firstLine) {
+                            optimized.push(codeBlockOpener);
+                            optimized.push(firstLine);
+                            optimized.push('```');
+                            currentTokens += this.estimateTokens(codeBlockOpener + '\n' + firstLine + '\n```');
+                        }
+                    }
+                    inCodeBlock = false;
+                    codeBlockStartLine = -1;
+                }
+                // Füge Truncation-Marker hinzu
+                optimized.push('\n[... content optimized for embedding - truncated to fit token limit ...]');
+                break;
+            }
+            
+            // Behalte Header (wichtig für Struktur)
+            if (line.startsWith('#') || line.startsWith('##')) {
+                optimized.push(line);
+                currentTokens += lineTokens;
+                continue;
+            }
+            
+            // Behalte Interface/Method-Namen (wichtig für Semantic Search)
+            if (line.startsWith('### interface:') || line.startsWith('### method:') || line.startsWith('### class:') || line.startsWith('### variable:')) {
+                optimized.push(line);
+                currentTokens += lineTokens;
+                if (line.includes('interface:')) interfaceCount++;
+                if (line.includes('method:')) methodCount++;
+                tableRowCount = 0;
+                tableHeaderSkipped = false;
+                continue;
+            }
+            
+            // Code-Blöcke: Behalte nur erste Zeile (Signatur)
+            if (line.startsWith('```')) {
+                if (!inCodeBlock) {
+                    // Code-Block startet
+                    inCodeBlock = true;
+                    codeBlockStartLine = i;
+                    codeBlockOpener = line;
+                    optimized.push(line); // Behalte ``` opener
+                    currentTokens += lineTokens;
+                } else {
+                    // Code-Block endet
+                    inCodeBlock = false;
+                    optimized.push(line); // Behalte ``` closer
+                    currentTokens += lineTokens;
+                    codeBlockStartLine = -1;
+                }
+                continue;
+            }
+            
+            if (inCodeBlock) {
+                // In Code-Block: Behalte nur erste Zeile (Signatur)
+                if (codeBlockStartLine === i - 1) {
+                    // Erste Zeile nach ``` opener
+                    optimized.push(line);
+                    currentTokens += lineTokens;
+                }
+                // Überspringe weitere Zeilen im Code-Block
+                continue;
+            }
+            
+            // Tabellen: Aggressiver kürzen (max. 3 Zeilen pro Tabelle)
+            if (line.startsWith('|')) {
+                if (line.includes('---')) {
+                    // Tabellen-Separator: Behalte
+                    optimized.push(line);
+                    currentTokens += lineTokens;
+                    tableRowCount = 0;
+                    tableHeaderSkipped = false;
+                } else {
+                    // Tabellen-Zeile: Überspringe nach 3 Zeilen
+                    if (tableRowCount < 3) {
+                        optimized.push(line);
+                        currentTokens += lineTokens;
+                        tableRowCount++;
+                    }
+                    // Überspringe weitere Zeilen
+                }
+                continue;
+            }
+            
+            // Behalte wichtige Kommentare (change markers)
+            if (line.trim().startsWith('<!--') && line.includes('change:')) {
+                optimized.push(line);
+                currentTokens += lineTokens;
+                continue;
+            }
+            
+            // Behalte leere Zeilen (Struktur)
+            if (line.trim() === '') {
+                optimized.push(line);
+                continue;
+            }
+            
+            // Für sehr große Dokumentationen: Überspringe normale Text-Zeilen
+            if (interfaceCount > 20 || methodCount > 50) {
+                // Überspringe normale Text-Zeilen (nicht Header, nicht Code, nicht Tabellen)
+                continue;
+            }
+            
+            // Behalte alle anderen Zeilen
+            optimized.push(line);
+            currentTokens += lineTokens;
+        }
+        
+        const optimizedContent = optimized.join('\n');
+        const finalTokens = this.estimateTokens(optimizedContent);
+        
+        // Finale Prüfung: Falls immer noch zu groß, kürze aggressiv
+        if (finalTokens > maxTokens) {
+            const maxChars = maxTokens * 3; // Konservativ: 3 chars/token
+            const truncated = optimizedContent.substring(0, maxChars);
+            return truncated + '\n\n[... content optimized for embedding - final truncation ...]';
+        }
+        
+        return optimizedContent;
+    }
+
+    /**
+     * Extracts only the structure of a module (header, interface/method names, signatures).
+     * Used for hierarchical embeddings where details are in Y-Dimension (Symbols).
+     * Only keeps: Headers, interface/method/class/variable names, first line of code blocks (signatures).
+     * Removes: All tables, code block bodies, normal text.
+     * 
+     * @param content Full markdown content
+     * @returns Module structure (header + names + signatures, no details)
+     */
+    private extractModuleStructure(content: string): string {
+        const lines = content.split('\n');
+        const structure: string[] = [];
+        
+        let inCodeBlock = false;
+        let codeBlockOpener = '';
+        let codeBlockFirstLine: string | null = null;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            
+            // Behalte alle Header
+            if (line.startsWith('#') || line.startsWith('##') || line.startsWith('###')) {
+                structure.push(line);
+                continue;
+            }
+            
+            // Code-Blöcke: Behalte nur erste Zeile (Signatur)
+            if (line.startsWith('```')) {
+                if (inCodeBlock) {
+                    // Ende des Code-Blocks: Behalte nur erste Zeile (Signatur)
+                    if (codeBlockFirstLine !== null) {
+                        structure.push(codeBlockOpener);
+                        structure.push(codeBlockFirstLine);
+                        structure.push('```');
+                    }
+                    codeBlockFirstLine = null;
+                    inCodeBlock = false;
+                } else {
+                    // Code-Block startet
+                    inCodeBlock = true;
+                    codeBlockOpener = line;
+                }
+                continue;
+            }
+            
+            if (inCodeBlock) {
+                // In Code-Block: Behalte nur erste Zeile (Signatur)
+                if (codeBlockFirstLine === null && line.trim() && !line.startsWith('```')) {
+                    codeBlockFirstLine = line;
+                }
+                // Überspringe weitere Zeilen im Code-Block
+                continue;
+            }
+            
+            // Überspringe Tabellen komplett (Details sind in Y-Dimension)
+            if (line.startsWith('|')) {
+                continue;
+            }
+            
+            // Behalte wichtige Kommentare (change markers, etc.)
+            if (line.trim().startsWith('<!--') && line.includes('change:')) {
+                structure.push(line);
+                continue;
+            }
+            
+            // Behalte leere Zeilen für Struktur (max. 2 aufeinanderfolgende)
+            if (line.trim() === '') {
+                const lastLine = structure[structure.length - 1];
+                if (lastLine && lastLine.trim() === '') {
+                    // Bereits eine leere Zeile, überspringe weitere
+                    continue;
+                }
+                structure.push(line);
+                continue;
+            }
+            
+            // Überspringe alle anderen Details (normaler Text, Beschreibungen, etc.)
+        }
+        
+        return structure.join('\n');
     }
 }
 

@@ -4,6 +4,9 @@ import { EmbeddingRepository } from '../repositories/embedding-repository';
 import { ImportanceRepository } from '../repositories/importance-repository';
 import { VectorDatabase } from '../core/vector-database-interface';
 import { EntityReference } from '../models/entity-reference';
+import { Evidence, EvidenceSource } from '../models/evidence';
+import { EvidenceGrader } from './evidence-grader';
+import { QueryRewriter } from '../services/query-rewriter';
 import * as sqlite3 from 'sqlite3';
 
 /**
@@ -17,6 +20,7 @@ export interface SemanticSearchResult {
     vectorScore: number;  // Vector similarity score
     importanceScore: number;  // Importance score
     entityRef: EntityReference;
+    evidence?: Evidence;
 }
 
 /**
@@ -34,12 +38,16 @@ export interface SemanticSearchOptions {
 export class SemanticSearchApi {
     private dbManager: MultiDbManager;
     private embeddingGenerator: EmbeddingGenerator;
+    private evidenceGrader: EvidenceGrader;
+    private queryRewriter: QueryRewriter;
     private readonly vectorWeight: number = 0.7;
     private readonly importanceWeight: number = 0.3;
 
     constructor(dbManager: MultiDbManager, embeddingGenerator: EmbeddingGenerator) {
         this.dbManager = dbManager;
         this.embeddingGenerator = embeddingGenerator;
+        this.evidenceGrader = new EvidenceGrader();
+        this.queryRewriter = new QueryRewriter();
     }
 
     /**
@@ -65,22 +73,27 @@ export class SemanticSearchApi {
 
         // Removed console.log to prevent stdout interference with MCP JSON-RPC protocol
 
-        // 1. Generate query embedding
+        // 1. Rewrite query for better results (ADR number expansion, synonym expansion)
+        const rewrittenQuery = this.queryRewriter.rewriteQuery(query);
+
+        // 2. Generate query embedding
         const queryEmbedding = await this.embeddingGenerator.generateEmbedding(
             'X', // Dimension doesn't matter for query
             'query',
-            query
+            rewrittenQuery
         );
 
-        // 2. Search in each dimension
+        // 3. Search in each dimension
         const allResults: SemanticSearchResult[] = [];
 
         for (const dimension of dimensions) {
+            // Get dimension-specific minScore (for ADRs, use 0.0 to include all)
+            const dimensionMinScore = this.getMinScoreForDimension(dimension, minScore);
             const dimensionResults = await this.searchDimension(
                 dimension,
                 queryEmbedding,
                 pluginId,
-                minScore
+                dimensionMinScore
             );
             allResults.push(...dimensionResults);
         }
@@ -193,6 +206,29 @@ export class SemanticSearchApi {
             const combinedScore = this.vectorWeight * vectorScore + this.importanceWeight * importanceScore;
 
             if (combinedScore >= minScore) {
+                // Create evidence: INFERRED from multiple DB queries (embedding lookup, importance score, vector search)
+                const evidenceSources: EvidenceSource[] = [
+                    {
+                        type: 'DB_QUERY',
+                        path: 'embedding_repository.getById',
+                        id: embeddingId
+                    },
+                    {
+                        type: 'DB_QUERY',
+                        path: 'importance_repository.getAllByDimension',
+                        id: dimension
+                    },
+                    {
+                        type: 'DB_QUERY',
+                        path: 'vector_database.search',
+                        id: dimension
+                    }
+                ];
+                const evidence = this.evidenceGrader.gradeAsInferred(
+                    evidenceSources,
+                    `Semantic search result derived from vector database search, embedding lookup, and importance scoring`
+                );
+
                 results.push({
                     dimension,
                     entityId: embedding.entity_id,
@@ -204,7 +240,8 @@ export class SemanticSearchApi {
                         dimension,
                         entity_id: embedding.entity_id,
                         external_id: embedding.external_id
-                    }
+                    },
+                    evidence
                 });
             }
         }
@@ -282,6 +319,24 @@ export class SemanticSearchApi {
             const combinedScore = this.vectorWeight * vectorScore + this.importanceWeight * importanceScore;
 
             if (combinedScore >= minScore) {
+                // Create evidence: INFERRED from multiple DB queries (embedding lookup, importance score, cosine similarity)
+                const evidenceSources: EvidenceSource[] = [
+                    {
+                        type: 'DB_QUERY',
+                        path: 'embedding_repository.getAllByDimension',
+                        id: dimension
+                    },
+                    {
+                        type: 'DB_QUERY',
+                        path: 'importance_repository.getAllByDimension',
+                        id: dimension
+                    }
+                ];
+                const evidence = this.evidenceGrader.gradeAsInferred(
+                    evidenceSources,
+                    `Semantic search result derived from cosine similarity calculation, embedding lookup, and importance scoring`
+                );
+
                 results.push({
                     dimension,
                     entityId: embedding.entity_id,
@@ -293,7 +348,8 @@ export class SemanticSearchApi {
                         dimension,
                         entity_id: embedding.entity_id,
                         external_id: embedding.external_id
-                    }
+                    },
+                    evidence
                 });
             }
         }
@@ -325,6 +381,22 @@ export class SemanticSearchApi {
         }
 
         return dotProduct / denominator;
+    }
+
+    /**
+     * Gets minimum score for a dimension.
+     * For ADRs (W-dimension), uses 0.0 to include all results.
+     * 
+     * @param dimension The dimension
+     * @param defaultMinScore The default minimum score
+     * @returns The minimum score for the dimension
+     */
+    private getMinScoreForDimension(dimension: 'X' | 'Y' | 'Z' | 'W' | 'T', defaultMinScore: number): number {
+        // For ADRs: Use 0.0 to include all results (better recall)
+        if (dimension === 'W') {
+            return 0.0;
+        }
+        return defaultMinScore;
     }
 }
 

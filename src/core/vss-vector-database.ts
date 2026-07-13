@@ -11,7 +11,7 @@ export class VssVectorDatabase implements VectorDatabase {
     private db: sqlite3.Database;
     private vssLoader: VssLoader;
     private vssAvailable: boolean = false;
-    private readonly embeddingDimensions: number = 1536;
+    private readonly embeddingDimensions: number = 1024;
 
     constructor(db: sqlite3.Database, vssLoader: VssLoader) {
         this.db = db;

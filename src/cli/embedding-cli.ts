@@ -69,7 +69,7 @@ async function main(): Promise<void> {
         console.error('');
         console.error('This tool syncs embeddings for all 5 dimensions (X, Y, Z, W, T).');
         console.error('It requires:');
-        console.error('  - OPENAI_API_KEY in .env file or environment');
+        console.error('  - VOYAGE_API_KEY in .env file or environment');
         console.error('  - ChromaDB Server running (on Windows) or SQLite VSS (on macOS/Linux)');
         console.error('  - Existing 5D database with ingested data');
         process.exit(1);
@@ -81,13 +81,13 @@ async function main(): Promise<void> {
         process.exit(1);
     }
     
-    // Load .env file (required for OpenAI API key)
+    // Load .env file (required for Voyage API key)
     loadEnvFile(workspaceRoot);
-    
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-        console.error('ERROR: OPENAI_API_KEY not found in environment or .env file');
-        console.error('Embedding generation requires OpenAI API key.');
+
+    // Check for Voyage API key
+    if (!process.env.VOYAGE_API_KEY) {
+        console.error('ERROR: VOYAGE_API_KEY not found in environment or .env file');
+        console.error('Embedding generation requires a Voyage AI API key.');
         process.exit(1);
     }
     

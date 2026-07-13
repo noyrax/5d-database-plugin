@@ -133,13 +133,13 @@ async function main(): Promise<void> {
         process.exit(1);
     }
     
-    // Load .env file (required for OpenAI API key)
+    // Load .env file (required for Voyage API key)
     loadEnvFile(workspaceRoot);
-    
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-        console.error('ERROR: OPENAI_API_KEY not found in environment or .env file');
-        console.error('Semantic search requires OpenAI API key for embedding generation.');
+
+    // Check for Voyage API key
+    if (!process.env.VOYAGE_API_KEY) {
+        console.error('ERROR: VOYAGE_API_KEY not found in environment or .env file');
+        console.error('Semantic search requires a Voyage AI API key for embedding generation.');
         process.exit(1);
     }
     

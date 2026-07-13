@@ -76,7 +76,7 @@ export class SymbolIngestor implements BaseIngestor {
                     continue;
                 }
                 const existing = await repository.getBySymbolId(symbolId, pluginId);
-                const signatureHash = this.computeSignatureHash(symbolData);
+                const signatureHash = symbolData.signature_hash || this.computeSignatureHash(symbolData);
 
                 if (existing && existing.signature_hash === signatureHash) {
                     continue;
@@ -113,8 +113,28 @@ export class SymbolIngestor implements BaseIngestor {
             throw new Error(`Symbol missing required field 'name': ${JSON.stringify(symbolData)}`);
         }
 
-        const signatureHash = this.computeSignatureHash(symbolData);
+        // Use signature_hash from symbolData if provided, otherwise compute it
+        const signatureHash = symbolData.signature_hash || this.computeSignatureHash(symbolData);
         const existing = await repository.getBySymbolId(symbolId, pluginId);
+        
+        // Legacy Cleanup: If ingesting a ts:// symbol, delete the corresponding unknown:// duplicate
+        if (symbolId.startsWith('ts://')) {
+            const legacySymbolId = symbolId.replace('ts://', 'unknown://');
+            const legacySymbol = await repository.getBySymbolId(legacySymbolId, pluginId);
+            
+            if (legacySymbol) {
+                // Check if it's a true duplicate (same path + name + signature hash)
+                const isDuplicate = legacySymbol.path === symbolData.path &&
+                                   legacySymbol.name === symbolData.name &&
+                                   legacySymbol.signature_hash === signatureHash;
+                
+                if (isDuplicate) {
+                    await repository.delete(legacySymbol.id, pluginId);
+                    console.log(`[SymbolIngestor] Cleaned up legacy symbol: ${legacySymbolId} (replaced by ${symbolId})`);
+                }
+            }
+        }
+        
         const now = new Date();
 
         const symbol: Symbol = {
@@ -127,6 +147,12 @@ export class SymbolIngestor implements BaseIngestor {
             signature_json: JSON.stringify(symbolData.signature || {}),
             signature_hash: signatureHash,
             summary: symbolData.summary || null,
+            start_line: symbolData.startLine ?? symbolData.start_line ?? null,
+            end_line: symbolData.endLine ?? symbolData.end_line ?? null,
+            start_col: symbolData.startCol ?? symbolData.start_col ?? null,
+            end_col: symbolData.endCol ?? symbolData.end_col ?? null,
+            byte_offset_start: symbolData.byteOffsetStart ?? symbolData.byte_offset_start ?? null,
+            byte_offset_end: symbolData.byteOffsetEnd ?? symbolData.byte_offset_end ?? null,
             deleted_at: null,
             created_at: existing?.created_at || now,
             updated_at: now

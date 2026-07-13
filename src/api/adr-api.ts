@@ -2,6 +2,7 @@ import * as path from 'path';
 import { MultiDbManager } from '../core/multi-db-manager';
 import { AdrRepository } from '../repositories/adr-repository';
 import { Adr } from '../models/adr';
+import { PathNormalizer } from '../core/path-normalizer';
 
 /**
  * API for W-Dimension: ADRs
@@ -112,7 +113,7 @@ export class AdrApi {
         }
 
         // Generate normalized path variants
-        const pathVariants = this.normalizeFilePath(filePath);
+        const pathVariants = PathNormalizer.generateLookupVariants(filePath);
         
         // Try each variant
         for (const variant of pathVariants) {
@@ -125,55 +126,5 @@ export class AdrApi {
         return [];
     }
 
-    /**
-     * Normalizes a file path to generate possible variants for flexible matching.
-     * Returns an array of path variants in order of preference.
-     * (Same logic as ModuleApi.normalizeFilePath)
-     */
-    private normalizeFilePath(filePath: string): string[] {
-        const variants: string[] = [];
-        
-        // Normalize separators to forward slashes
-        let normalized = filePath.replace(/\\/g, '/');
-        variants.push(normalized);
-        
-        // Remove leading slashes
-        const withoutLeadingSlash = normalized.replace(/^\/+/, '');
-        if (withoutLeadingSlash !== normalized) {
-            variants.push(withoutLeadingSlash);
-        }
-        
-        const pluginPrefixes = ['5d-database-plugin/', 'documentation-system-plugin/', 'mcp-server/'];
-        
-        // Remove common plugin prefixes (e.g., "5d-database-plugin/")
-        for (const prefix of pluginPrefixes) {
-            if (normalized.startsWith(prefix)) {
-                const withoutPrefix = normalized.substring(prefix.length);
-                variants.push(withoutPrefix);
-            }
-            // Also try without leading slash
-            if (withoutLeadingSlash.startsWith(prefix)) {
-                const withoutPrefix = withoutLeadingSlash.substring(prefix.length);
-                variants.push(withoutPrefix);
-            }
-        }
-        
-        // ADD variants WITH plugin prefixes (if path doesn't already have one)
-        // This handles cases where file mappings are stored with plugin prefix but queried without
-        const hasPluginPrefix = pluginPrefixes.some(prefix => 
-            normalized.startsWith(prefix) || withoutLeadingSlash.startsWith(prefix)
-        );
-        
-        if (!hasPluginPrefix) {
-            // Add variants with each plugin prefix
-            for (const prefix of pluginPrefixes) {
-                variants.push(`${prefix}${withoutLeadingSlash}`);
-                variants.push(`${prefix}${normalized}`);
-            }
-        }
-        
-        // Remove duplicates and return
-        return Array.from(new Set(variants));
-    }
 }
 

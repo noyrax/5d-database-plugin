@@ -1,44 +1,43 @@
-import OpenAI from 'openai';
+import { VoyageAIClient } from 'voyageai';
 
 /**
  * Generates embeddings for entities across all 5 dimensions.
- * Uses OpenAI text-embedding-3-small model (1536 dimensions).
+ * Uses Voyage AI voyage-3.5 model (1024 dimensions).
+ *
+ * Voyage AI is Anthropic's recommended embedding provider (Anthropic does not
+ * offer its own embedding API). Configure via the VOYAGE_API_KEY environment
+ * variable, or override the model via VOYAGE_MODEL.
  */
 export class EmbeddingGenerator {
-    private openai: OpenAI | null = null;
-    private readonly model: string = 'text-embedding-3-small';
-    private readonly dimensions: number = 1536;
+    private client: VoyageAIClient | null = null;
+    private readonly model: string = process.env.VOYAGE_MODEL || 'voyage-3.5';
+    private readonly dimensions: number = 1024;
 
     constructor(apiKey?: string) {
-        if (apiKey) {
-            this.openai = new OpenAI({ apiKey });
+        const key = apiKey || process.env.VOYAGE_API_KEY;
+        if (key) {
+            this.client = new VoyageAIClient({ apiKey: key });
         } else {
-            // Try to get from environment variable
-            const envKey = process.env.OPENAI_API_KEY;
-            if (envKey) {
-                this.openai = new OpenAI({ apiKey: envKey });
-            } else {
-                console.warn('[EmbeddingGenerator] OpenAI API key not provided. Embedding generation will not work.');
-            }
+            console.warn('[EmbeddingGenerator] Voyage API key not provided. Set VOYAGE_API_KEY. Embedding generation will not work.');
         }
     }
 
     /**
      * Generates an embedding for a single entity.
-     * 
+     *
      * @param dimension The dimension (X, Y, Z, W, or T)
      * @param entityId The entity ID (for logging)
      * @param content The content to embed
-     * @returns Promise that resolves to the embedding vector (1536 dimensions)
-     * @throws Error if OpenAI API is not configured or API call fails
+     * @returns Promise that resolves to the embedding vector (1024 dimensions)
+     * @throws Error if the Voyage API is not configured or the API call fails
      */
     async generateEmbedding(
         dimension: 'X' | 'Y' | 'Z' | 'W' | 'T',
         entityId: string,
         content: string
     ): Promise<number[]> {
-        if (!this.openai) {
-            throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY environment variable.');
+        if (!this.client) {
+            throw new Error('Voyage API key not configured. Set VOYAGE_API_KEY environment variable.');
         }
 
         if (!content || content.trim().length === 0) {
@@ -46,17 +45,18 @@ export class EmbeddingGenerator {
         }
 
         try {
-            const response = await this.openai.embeddings.create({
-                model: this.model,
+            const response = await this.client.embed({
                 input: content,
-                dimensions: this.dimensions
+                model: this.model,
+                outputDimension: this.dimensions
             });
 
-            if (!response.data || response.data.length === 0) {
+            const embedding = response.data?.[0]?.embedding;
+            if (!embedding || embedding.length === 0) {
                 throw new Error(`No embedding returned for entity ${entityId}`);
             }
 
-            return response.data[0].embedding;
+            return embedding;
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new Error(`Failed to generate embedding for entity ${entityId} in dimension ${dimension}: ${errorMessage}`);
@@ -65,16 +65,16 @@ export class EmbeddingGenerator {
 
     /**
      * Generates embeddings for multiple entities in batch.
-     * Uses OpenAI batch API for better performance.
-     * 
+     * Uses the Voyage AI batch embedding endpoint for better performance.
+     *
      * @param items Array of items to embed
      * @returns Promise that resolves to a Map of entityId -> embedding vector
      */
     async generateBatch(
         items: Array<{ dimension: 'X' | 'Y' | 'Z' | 'W' | 'T'; entityId: string; content: string }>
     ): Promise<Map<string, number[]>> {
-        if (!this.openai) {
-            throw new Error('OpenAI API key not configured. Set OPENAI_API_KEY environment variable.');
+        if (!this.client) {
+            throw new Error('Voyage API key not configured. Set VOYAGE_API_KEY environment variable.');
         }
 
         if (items.length === 0) {
@@ -83,42 +83,46 @@ export class EmbeddingGenerator {
 
         // Filter out empty content
         const validItems = items.filter(item => item.content && item.content.trim().length > 0);
-        
+
         if (validItems.length === 0) {
             return new Map();
         }
 
         const results = new Map<string, number[]>();
 
-        // OpenAI embeddings API supports up to 2048 inputs per request
-        // We'll process in batches of 100 for safety
+        // Voyage embeddings API supports up to 1000 inputs per request.
+        // We process in batches of 100 for safety (per-request token limits also apply).
         const batchSize = 100;
-        
+
         for (let i = 0; i < validItems.length; i += batchSize) {
             const batch = validItems.slice(i, i + batchSize);
-            
+
             try {
                 const inputs = batch.map(item => item.content);
-                const response = await this.openai.embeddings.create({
-                    model: this.model,
+                const response = await this.client.embed({
                     input: inputs,
-                    dimensions: this.dimensions
+                    model: this.model,
+                    outputDimension: this.dimensions
                 });
 
-                if (!response.data || response.data.length !== batch.length) {
-                    throw new Error(`Mismatch: expected ${batch.length} embeddings, got ${response.data?.length || 0}`);
+                const data = response.data;
+                if (!data || data.length !== batch.length) {
+                    throw new Error(`Mismatch: expected ${batch.length} embeddings, got ${data?.length || 0}`);
                 }
 
-                // Map results back to entity IDs
+                // Map results back to entity IDs (Voyage preserves input order)
                 for (let j = 0; j < batch.length; j++) {
-                    const item = batch[j];
-                    const embedding = response.data[j].embedding;
-                    results.set(item.entityId, embedding);
+                    const embedding = data[j].embedding;
+                    if (!embedding || embedding.length === 0) {
+                        console.error(`[EmbeddingGenerator] Empty embedding for ${batch[j].entityId}`);
+                        continue;
+                    }
+                    results.set(batch[j].entityId, embedding);
                 }
             } catch (error) {
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 console.error(`[EmbeddingGenerator] Batch embedding failed for batch ${i / batchSize + 1}: ${errorMessage}`);
-                
+
                 // Fallback: Try individual embeddings for this batch
                 for (const item of batch) {
                     try {
@@ -150,11 +154,9 @@ export class EmbeddingGenerator {
     }
 
     /**
-     * Checks if OpenAI API is configured.
+     * Checks if the Voyage API is configured.
      */
     isConfigured(): boolean {
-        return this.openai !== null;
+        return this.client !== null;
     }
 }
-
-

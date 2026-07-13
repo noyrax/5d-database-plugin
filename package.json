@@ -2,7 +2,7 @@
   "name": "@noyrax/5d-database-plugin",
   "displayName": "5D Database Plugin",
   "description": "5-dimensional database layer for documentation system with semantic brain integration. Provides SQLite databases for modules, symbols, dependencies, ADRs, and changes. Includes semantic search and MCP server integration for AI agents.",
-  "version": "0.1.14-beta.5",
+  "version": "0.1.14-beta.16",
   "publisher": "noyrax",
   "license": "MIT",
   "repository": {
@@ -60,12 +60,12 @@
   },
   "bin": {
     "noyrax-5d-database": "./out/cli/ingest-cli.js",
-    "noyrax-5d-database-mcp": "./out/cli/mcp-server-cli.js",
     "noyrax-5d-database-query": "./out/cli/query-cli.js",
     "noyrax-5d-database-tool": "./out/cli/tool-cli.js",
     "noyrax-5d-database-search": "./out/cli/semantic-search-cli.js",
     "noyrax-5d-database-embedding": "./out/cli/embedding-cli.js",
-    "noyrax-5d-database-debug-plugin-id": "./out/cli/debug-plugin-id.js"
+    "noyrax-5d-database-debug-plugin-id": "./out/cli/debug-plugin-id.js",
+    "noyrax-5d-database-debug-embedding-strategies": "./out/cli/debug-embedding-strategies.js"
   },
   "contributes": {
     "commands": [
@@ -158,9 +158,10 @@
     "test:coverage": "jest --coverage",
     "test:v-dimension": "node out/cli/test-v-dimension.js",
     "test:chromadb": "node out/cli/test-chromadb.js",
-    "verify:openai-key": "node out/cli/verify-openai-key.js",
+    "verify:embedding-key": "node out/cli/verify-embedding-key.js",
     "verify:vss-status": "node out/cli/verify-vss-status.js",
-    "merge:workspaces": "node out/cli/merge-workspaces-cli.js"
+    "merge:workspaces": "node out/cli/merge-workspaces-cli.js",
+    "debug:semantic": "node out/cli/debug-semantic-search.js"
   },
   "dependencies": {
     "@chroma-core/default-embed": "^0.1.9",
@@ -171,6 +172,7 @@
     "sqlite-vss": "^0.1.2",
     "sqlite3": "^5.1.6",
     "uuid": "^9.0.1",
+    "voyageai": "^0.0.4",
     "zod": "^4.2.1"
   },
   "devDependencies": {

@@ -79,7 +79,7 @@ function loadEnvFile(workspaceRoot: string): void {
 
 /**
  * CLI tool for ingesting documentation into the 5D database.
- * Usage: node ingest-cli.js <workspace-root> [--full]
+ * Usage: node ingest-cli.js <workspace-root> [--full] [--cleanup]
  */
 async function main(): Promise<void> {
     const args = process.argv.slice(2);
@@ -87,35 +87,48 @@ async function main(): Promise<void> {
     // Auto-detect workspace root if not provided
     let workspaceRoot: string;
     let isFull: boolean;
+    let shouldCleanup: boolean;
     
     if (args.length === 0) {
         // No arguments: use current working directory
         workspaceRoot = process.cwd();
         isFull = false;
+        shouldCleanup = false;
     } else if (args[0] === '--full') {
         // First arg is --full: use current working directory
         workspaceRoot = process.cwd();
         isFull = true;
-    } else if (args.includes('--full')) {
-        // Workspace root provided, --full flag present
+        shouldCleanup = args.includes('--cleanup');
+    } else if (args[0] === '--cleanup') {
+        // First arg is --cleanup: use current working directory
+        workspaceRoot = process.cwd();
+        isFull = args.includes('--full');
+        shouldCleanup = true;
+    } else if (args.includes('--full') || args.includes('--cleanup')) {
+        // Workspace root provided, flags present
         workspaceRoot = path.resolve(args[0]);
-        isFull = true;
+        isFull = args.includes('--full');
+        shouldCleanup = args.includes('--cleanup');
     } else {
-        // Workspace root provided, no --full flag
+        // Workspace root provided, no flags
         workspaceRoot = path.resolve(args[0]);
         isFull = false;
+        shouldCleanup = false;
     }
 
     // Load .env file from workspace root or parent directories
     loadEnvFile(workspaceRoot);
-    if (process.env.OPENAI_API_KEY) {
-        console.log('[Ingest CLI] OpenAI API key loaded from .env file');
+    if (process.env.VOYAGE_API_KEY) {
+        console.log('[Ingest CLI] Voyage API key loaded from .env file');
     } else {
-        console.warn('[Ingest CLI] WARNING: OPENAI_API_KEY not found in .env file or environment variables');
+        console.warn('[Ingest CLI] WARNING: VOYAGE_API_KEY not found in .env file or environment variables (embeddings will be skipped)');
     }
 
     console.log(`Ingesting documentation from: ${workspaceRoot}`);
     console.log(`Mode: ${isFull ? 'full' : 'incremental'}`);
+    if (shouldCleanup) {
+        console.log(`Cleanup: enabled (will delete old databases with different plugin ID)`);
+    }
     
     // Find docs directory (dependency on Documentation System Plugin)
     const docsPath = DocsPathResolver.findDocsDirectoryFromPath(workspaceRoot);
@@ -139,10 +152,34 @@ async function main(): Promise<void> {
     const dbManager = new MultiDbManager(workspaceRoot);
     const pluginRoot = path.resolve(__dirname, '..', '..');
     const migrationManager = new MigrationManager(dbManager, pluginRoot);
-    
+
+    // Check for plugin ID mismatch
+    const hasMismatch = await dbManager.checkPluginIdMismatch();
+    if (hasMismatch) {
+        if (shouldCleanup || isFull) {
+            // Automatic cleanup on --cleanup flag or --full ingestion
+            if (isFull) {
+                console.log(`[Ingest CLI] Plugin ID mismatch detected. Automatically cleaning up old databases (--full mode).`);
+            } else {
+                console.log(`[Ingest CLI] Plugin ID mismatch detected. Cleaning up old databases (--cleanup flag).`);
+            }
+            await dbManager.cleanupOldDatabases();
+        } else {
+            console.error(`[Ingest CLI] ERROR: Plugin ID mismatch detected!`);
+            console.error(`[Ingest CLI] Current plugin ID: ${dbManager.getPluginId()}`);
+            console.error(`[Ingest CLI] Old databases have a different plugin ID (workspace may have been moved/renamed).`);
+            console.error(`[Ingest CLI]`);
+            console.error(`[Ingest CLI] Solution: Run ingestion with --cleanup flag to delete old databases:`);
+            console.error(`[Ingest CLI]   noyrax-5d-database ingest "${workspaceRoot}" --cleanup`);
+            console.error(`[Ingest CLI] Or use --full flag (automatically cleans up):`);
+            console.error(`[Ingest CLI]   noyrax-5d-database ingest "${workspaceRoot}" --full`);
+            process.exit(1);
+        }
+    }
+
     // Validate that required documentation files exist (hard validation - exits on failure)
     validateWorkspaceRoot(workspaceRoot, docsPath);
-    
+
     const ingestionOrchestrator = new IngestionOrchestrator(dbManager, migrationManager, docsPath);
 
     try {

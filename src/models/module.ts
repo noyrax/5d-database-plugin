@@ -8,6 +8,8 @@ export interface Module {
     file_path: string;  // Repository-relative source path (e.g., src/core/scanner.ts)
     content_hash: string;  // SHA256 of content_markdown
     content_markdown: string;  // Full markdown content
+    line_count: number | null;  // Total lines in source file
+    byte_size: number | null;  // Total bytes in source file
     deleted_at: Date | null;
     created_at: Date;
     updated_at: Date;

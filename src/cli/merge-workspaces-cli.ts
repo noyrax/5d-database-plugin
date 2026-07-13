@@ -69,10 +69,10 @@ async function main(): Promise<void> {
     
     // Load .env file
     loadEnvFile(targetWorkspaceRoot);
-    if (process.env.OPENAI_API_KEY) {
-        console.log('[Merge Workspaces CLI] OpenAI API key loaded from .env file');
+    if (process.env.VOYAGE_API_KEY) {
+        console.log('[Merge Workspaces CLI] Voyage API key loaded from .env file');
     } else {
-        console.warn('[Merge Workspaces CLI] WARNING: OPENAI_API_KEY not found in .env file or environment variables');
+        console.warn('[Merge Workspaces CLI] WARNING: VOYAGE_API_KEY not found in .env file or environment variables (embeddings will be skipped)');
     }
     
     console.log(`Target workspace root: ${targetWorkspaceRoot}`);

@@ -12,15 +12,15 @@ function loadEnvFile(workspaceRoot: string): void {
     // Try to find .env file in workspace root or parent directories
     let currentPath = workspaceRoot;
     const maxDepth = 5; // Prevent infinite loops
-    
+
     for (let depth = 0; depth < maxDepth; depth++) {
         const envPath = path.join(currentPath, '.env');
         if (fs.existsSync(envPath)) {
             config({ path: envPath });
-            console.log(`[Verify OpenAI Key] Loaded .env file from: ${envPath}`);
+            console.log(`[Verify Voyage Key] Loaded .env file from: ${envPath}`);
             return;
         }
-        
+
         // Try parent directory
         const parentPath = path.dirname(currentPath);
         if (parentPath === currentPath) {
@@ -28,25 +28,25 @@ function loadEnvFile(workspaceRoot: string): void {
         }
         currentPath = parentPath;
     }
-    
-    console.warn('[Verify OpenAI Key] No .env file found. Using environment variables only.');
+
+    console.warn('[Verify Voyage Key] No .env file found. Using environment variables only.');
 }
 
 /**
- * CLI tool to verify OpenAI API key configuration.
- * Usage: node verify-openai-key.js <workspace-root>
+ * CLI tool to verify Voyage AI API key configuration for embedding generation.
+ * Usage: node verify-embedding-key.js <workspace-root>
  */
 async function main(): Promise<void> {
     const args = process.argv.slice(2);
-    
+
     if (args.length === 0) {
-        console.error('Usage: verify-openai-key <workspace-root>');
+        console.error('Usage: verify-embedding-key <workspace-root>');
         process.exit(1);
     }
 
     const workspaceRoot = path.resolve(args[0]);
-    
-    console.log('=== OpenAI API Key Verification ===');
+
+    console.log('=== Voyage AI API Key Verification ===');
     console.log(`Workspace root: ${workspaceRoot}`);
     console.log('');
 
@@ -54,26 +54,26 @@ async function main(): Promise<void> {
     loadEnvFile(workspaceRoot);
 
     // Check if API key is set
-    const apiKey = process.env.OPENAI_API_KEY;
-    
+    const apiKey = process.env.VOYAGE_API_KEY;
+
     if (!apiKey) {
-        console.error('❌ ERROR: OPENAI_API_KEY not found in .env file or environment variables');
+        console.error('❌ ERROR: VOYAGE_API_KEY not found in .env file or environment variables');
         console.log('');
         console.log('💡 Next steps:');
         console.log('   1. Create a .env file in the workspace root');
-        console.log('   2. Add: OPENAI_API_KEY=your-api-key-here');
+        console.log('   2. Add: VOYAGE_API_KEY=your-api-key-here');
         console.log('   3. Run this script again');
         process.exit(1);
     }
 
-    console.log(`✓ OpenAI API key found (length: ${apiKey.length} characters)`);
+    console.log(`✓ Voyage API key found (length: ${apiKey.length} characters)`);
     console.log('');
 
     // Verify EmbeddingGenerator can be initialized
     try {
         const generator = new EmbeddingGenerator();
         const isConfigured = generator.isConfigured();
-        
+
         if (!isConfigured) {
             console.error('❌ ERROR: EmbeddingGenerator reports API key not configured');
             process.exit(1);
@@ -84,24 +84,25 @@ async function main(): Promise<void> {
 
         // Try to generate a test embedding
         console.log('Testing embedding generation with a simple query...');
+        const expectedDimensions = generator.getDimensions();
         try {
             const testEmbedding = await generator.generateEmbedding(
                 'X',
                 'test',
                 'This is a test query for verification.'
             );
-            
-            if (testEmbedding && testEmbedding.length === 1536) {
+
+            if (testEmbedding && testEmbedding.length === expectedDimensions) {
                 console.log(`✓ Test embedding generated successfully (dimensions: ${testEmbedding.length})`);
                 console.log('');
                 console.log('=== Verification Summary ===');
-                console.log('✅ OpenAI API key: CONFIGURED');
+                console.log('✅ Voyage API key: CONFIGURED');
                 console.log('✅ EmbeddingGenerator: WORKING');
                 console.log('✅ Embedding generation: WORKING');
                 console.log('');
                 console.log('The system is ready for V-Dimension operations!');
             } else {
-                console.error(`❌ ERROR: Invalid embedding dimensions (expected 1536, got ${testEmbedding?.length || 0})`);
+                console.error(`❌ ERROR: Invalid embedding dimensions (expected ${expectedDimensions}, got ${testEmbedding?.length || 0})`);
                 process.exit(1);
             }
         } catch (embeddingError) {
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
             console.log('💡 This might indicate:');
             console.log('   - Invalid API key');
             console.log('   - Network connectivity issues');
-            console.log('   - OpenAI API service problems');
+            console.log('   - Voyage AI API service problems');
             process.exit(1);
         }
     } catch (error) {
@@ -123,4 +124,3 @@ main().catch((error) => {
     console.error('Fatal error:', error);
     process.exit(1);
 });
-

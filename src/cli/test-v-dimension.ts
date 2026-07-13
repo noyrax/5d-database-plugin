@@ -53,10 +53,10 @@ async function main(): Promise<void> {
 
     // Load .env file
     loadEnvFile(workspaceRoot);
-    if (process.env.OPENAI_API_KEY) {
-        console.log('✓ OpenAI API key loaded from .env file');
+    if (process.env.VOYAGE_API_KEY) {
+        console.log('✓ Voyage API key loaded from .env file');
     } else {
-        console.warn('⚠ WARNING: OPENAI_API_KEY not found in .env file or environment variables');
+        console.warn('⚠ WARNING: VOYAGE_API_KEY not found in .env file or environment variables');
     }
     console.log('');
 

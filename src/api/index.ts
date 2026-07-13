@@ -17,6 +17,8 @@ export { SelfExplanationApi } from './self-explanation-api';
 export { LearningPathApi } from './learning-path-api';
 export { VectorApi } from './vector-api';
 export { IngestionApi } from './ingestion-api';
+export { VectorBackendStatusApi } from './vector-backend-status-api';
+export type { VectorBackendStatus, VectorBackendHealthcheck } from './vector-backend-status-api';
 export { ContextBuilder } from './context-builder';
 
 // Core classes needed for API initialization
@@ -31,4 +33,7 @@ export type { Dependency } from '../models/dependency';
 export type { Adr } from '../models/adr';
 export type { ChangeReport } from '../models/change';
 export type { EntityReference } from '../models/entity-reference';
+export { ReasonCode, parseReasonCode, getReasonCodeDescription } from '../models/reason-codes';
+export type { ActionHint, OperatingSystem } from '../models/action-hint';
+export { createActionHint, getActionHintsForOS, getAllActionHints } from '../models/action-hint';
 

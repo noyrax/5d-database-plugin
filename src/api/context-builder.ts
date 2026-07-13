@@ -324,11 +324,28 @@ export class ContextBuilder {
         const navRepo = new NavigationRepository(db);
         const entryPoints = await navRepo.getEntryPoints('X', pluginId);
 
-        return entryPoints.map(ep => ({
-            dimension: ep.dimension as 'X' | 'Y' | 'Z' | 'W' | 'T',
-            entity_id: ep.entity_id,
-            external_id: '' // Will be resolved from module
-        }));
+        const result: EntityReference[] = [];
+        
+        // ✅ Fix: Use existing this.moduleApi (already initialized in constructor)
+        for (const ep of entryPoints) {
+            try {
+                const module = await this.moduleApi.getModuleById(ep.entity_id, pluginId);
+                if (module) {
+                    result.push({
+                        dimension: ep.dimension as 'X' | 'Y' | 'Z' | 'W' | 'T',
+                        entity_id: ep.entity_id,
+                        external_id: module.file_path  // ✅ Fix: Use actual file_path instead of ''
+                    });
+                }
+                // Skip entry points without corresponding module
+            } catch (error) {
+                // Skip entry points that cause errors (e.g., module not found)
+                // This ensures we don't break the entire context building process
+                continue;
+            }
+        }
+
+        return result;
     }
 
     /**

@@ -2,6 +2,7 @@ import * as path from 'path';
 import { MultiDbManager } from '../core/multi-db-manager';
 import { ModuleRepository } from '../repositories/module-repository';
 import { Module } from '../models/module';
+import { PathNormalizer } from '../core/path-normalizer';
 
 /**
  * API for X-Dimension: Modules
@@ -41,7 +42,7 @@ export class ModuleApi {
         }
 
         // Generate normalized path variants
-        const pathVariants = this.normalizeFilePath(filePath);
+        const pathVariants = PathNormalizer.generateLookupVariants(filePath);
         
         // Try each variant
         for (const variant of pathVariants) {
@@ -52,7 +53,8 @@ export class ModuleApi {
         }
 
         // Fallback: Try LIKE search with normalized path
-        const normalized = this.normalizeFilePath(filePath)[0]; // First variant (most normalized)
+        const variants = PathNormalizer.generateLookupVariants(filePath);
+        const normalized = variants[0]; // First variant (most normalized)
         module = await repository.findByFilePathLike(normalized, pluginId);
         
         return module;
@@ -67,51 +69,6 @@ export class ModuleApi {
      * - With/without plugin prefixes
      * - Different separators (normalized to /)
      */
-    private normalizeFilePath(filePath: string): string[] {
-        const variants: string[] = [];
-        
-        // Normalize separators to forward slashes
-        let normalized = filePath.replace(/\\/g, '/');
-        variants.push(normalized);
-        
-        // Remove leading slashes
-        const withoutLeadingSlash = normalized.replace(/^\/+/, '');
-        if (withoutLeadingSlash !== normalized) {
-            variants.push(withoutLeadingSlash);
-        }
-        
-        const pluginPrefixes = ['5d-database-plugin/', 'documentation-system-plugin/', 'mcp-server/'];
-        
-        // Remove common plugin prefixes (e.g., "5d-database-plugin/")
-        for (const prefix of pluginPrefixes) {
-            if (normalized.startsWith(prefix)) {
-                const withoutPrefix = normalized.substring(prefix.length);
-                variants.push(withoutPrefix);
-            }
-            // Also try without leading slash
-            if (withoutLeadingSlash.startsWith(prefix)) {
-                const withoutPrefix = withoutLeadingSlash.substring(prefix.length);
-                variants.push(withoutPrefix);
-            }
-        }
-        
-        // ADD variants WITH plugin prefixes (if path doesn't already have one)
-        // This handles cases where modules are stored with plugin prefix but queried without
-        const hasPluginPrefix = pluginPrefixes.some(prefix => 
-            normalized.startsWith(prefix) || withoutLeadingSlash.startsWith(prefix)
-        );
-        
-        if (!hasPluginPrefix) {
-            // Add variants with each plugin prefix
-            for (const prefix of pluginPrefixes) {
-                variants.push(`${prefix}${withoutLeadingSlash}`);
-                variants.push(`${prefix}${normalized}`);
-            }
-        }
-        
-        // Remove duplicates and return
-        return Array.from(new Set(variants));
-    }
 
     /**
      * Gets all modules for a plugin.

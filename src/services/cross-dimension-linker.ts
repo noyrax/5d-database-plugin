@@ -4,6 +4,7 @@ import { ModuleRepository } from '../repositories/module-repository';
 import { SymbolRepository } from '../repositories/symbol-repository';
 import { AdrRepository } from '../repositories/adr-repository';
 import { EntityReference } from '../models/entity-reference';
+import { PathNormalizer } from '../core/path-normalizer';
 
 /**
  * Links entities across dimensions using external IDs.
@@ -105,7 +106,7 @@ export class CrossDimensionLinker {
         }
 
         // Fallback: normalize path variants (Cross-Analysis previously bypassed AdrApi normalization)
-        const variants = this.normalizeFilePath(filePath);
+        const variants = PathNormalizer.generateLookupVariants(filePath);
         const foundById = new Map<string, { adr_number: string; id: string }>();
 
         for (const variant of variants) {
@@ -126,48 +127,6 @@ export class CrossDimensionLinker {
             .sort((a, b) => a.external_id.localeCompare(b.external_id));
     }
 
-    /**
-     * Normalizes a file path to generate possible variants for flexible matching.
-     * Mirrors the logic used in ModuleApi/AgrApi (forward slashes, optional plugin prefixes).
-     */
-    private normalizeFilePath(filePath: string): string[] {
-        const variants: string[] = [];
-
-        // Normalize separators to forward slashes
-        let normalized = filePath.replace(/\\/g, '/');
-        variants.push(normalized);
-
-        // Remove leading slashes
-        const withoutLeadingSlash = normalized.replace(/^\/+/, '');
-        if (withoutLeadingSlash !== normalized) {
-            variants.push(withoutLeadingSlash);
-        }
-
-        const pluginPrefixes = ['5d-database-plugin/', 'documentation-system-plugin/', 'mcp-server/'];
-
-        // Remove common plugin prefixes
-        for (const prefix of pluginPrefixes) {
-            if (normalized.startsWith(prefix)) {
-                variants.push(normalized.substring(prefix.length));
-            }
-            if (withoutLeadingSlash.startsWith(prefix)) {
-                variants.push(withoutLeadingSlash.substring(prefix.length));
-            }
-        }
-
-        // Add variants WITH plugin prefixes (if path doesn't already have one)
-        const hasPluginPrefix = pluginPrefixes.some(prefix =>
-            normalized.startsWith(prefix) || withoutLeadingSlash.startsWith(prefix)
-        );
-        if (!hasPluginPrefix) {
-            for (const prefix of pluginPrefixes) {
-                variants.push(`${prefix}${withoutLeadingSlash}`);
-                variants.push(`${prefix}${normalized}`);
-            }
-        }
-
-        return Array.from(new Set(variants));
-    }
 
     /**
      * Gets all symbols for a module.

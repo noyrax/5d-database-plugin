@@ -12,8 +12,8 @@ export interface Embedding {
     entity_id: string;  // Internal ID from corresponding dimension
     external_id: string;  // External ID (file_path, symbol_id, etc.)
     content_hash: string;  // Hash of original content
-    embedding_model: string;  // e.g., 'text-embedding-3-small'
-    embedding_vector: Buffer;  // VSS vector (1536 floats as binary)
+    embedding_model: string;  // e.g., 'voyage-3.5'
+    embedding_vector: Buffer;  // VSS vector (1024 floats as binary)
     created_at: Date;
     updated_at: Date;
 }

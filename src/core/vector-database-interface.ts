@@ -22,7 +22,7 @@ export interface VectorDatabase {
      * Upserts (inserts or updates) an embedding vector.
      * 
      * @param embeddingId The unique identifier for the embedding
-     * @param embeddingVector The embedding vector (1536 dimensions)
+     * @param embeddingVector The embedding vector (1024 dimensions)
      * @returns Promise that resolves when the embedding is upserted
      */
     upsertEmbedding(embeddingId: string, embeddingVector: Float32Array | number[]): Promise<void>;

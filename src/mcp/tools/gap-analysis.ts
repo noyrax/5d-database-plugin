@@ -5,6 +5,7 @@ import { AdrApi } from '../../api/adr-api';
 import { ModuleApi } from '../../api/module-api';
 import { IdMapper } from '../../core/id-mapper';
 import { AdrGeneratorTool } from './adr-generator';
+import { SemanticSearchApi } from '../../api/semantic-search-api';
 import * as path from 'path';
 
 /**
@@ -96,6 +97,10 @@ export class GapAnalysisTool {
             architecturalView
                 .filter(view => view.dependencies.length >= minDeps)
                 .map(async view => {
+                    // WICHTIG: buildArchitecturalView gibt nur Module aus X-Dimension zurück
+                    // X-Dimension = docs/modules/ = alle Module haben bereits API-Docs
+                    const hasApiDocs = true; // buildArchitecturalView gibt nur Module aus X-Dimension zurück
+                    
                     const baseGap = {
                         module: {
                             file_path: view.module.file_path,
@@ -104,13 +109,31 @@ export class GapAnalysisTool {
                         dependency_count: view.dependencies.length,
                         adr_count: view.adrs.length,
                         adr_numbers: view.adrs.map(adr => adr.adr_number),
-                        gap_score: this.calculateGapScore(view.dependencies.length, view.adrs.length),
-                        has_adrs: view.adrs.length > 0
+                        has_api_docs: hasApiDocs, // Immer true für Module in buildArchitecturalView
+                        gap_score: this.calculateGapScore(view.dependencies.length, view.adrs.length, hasApiDocs),
+                        has_adrs: view.adrs.length > 0,
+                        // Modul ist dokumentiert wenn es API-Docs ODER ADRs hat
+                        // Da alle Module API-Docs haben, sind alle dokumentiert
+                        // ADRs sind nur für architektonische Entscheidungen nötig
+                        is_documented: hasApiDocs || view.adrs.length > 0
                     };
 
                     // Add context information for modules without ADRs (for KI-Agent ADR generation)
                     if (!baseGap.has_adrs) {
+                        // Try semantic fallback linking
+                        const semanticMatches = await this.findSemanticAdrMatches(view.module, args.pluginId, 0.4);
+                        
                         const context = await this.buildAdrGenerationContext(view.module, view.dependencies, args.pluginId);
+                        
+                        // Add semantic matches to context
+                        if (semanticMatches.length > 0) {
+                            context.semantic_adr_matches = semanticMatches.map(m => ({
+                                adr_number: m.adrNumber,
+                                score: m.score,
+                                match_type: "semantic_fallback"
+                            }));
+                        }
+                        
                         return {
                             ...baseGap,
                             context_for_adr_generation: context
@@ -197,6 +220,7 @@ export class GapAnalysisTool {
             incoming_dependencies: number;
             outgoing_dependencies: number;
         };
+        semantic_adr_matches?: Array<{ adr_number: string; score: number; match_type: string }>;
     }> {
         const context: any = {
             similar_modules_with_adrs: [],
@@ -298,14 +322,82 @@ export class GapAnalysisTool {
     }
 
     /**
+     * Finds semantic ADR matches for a module without explicit ADR links.
+     * Uses semantic search to find relevant ADRs based on module path and description.
+     * 
+     * @param module Module to find ADRs for
+     * @param pluginId Plugin ID
+     * @param threshold Minimum similarity score (default: 0.4)
+     * @returns Array of ADR matches with scores
+     */
+    private async findSemanticAdrMatches(
+        module: any,
+        pluginId: string,
+        threshold: number = 0.4
+    ): Promise<Array<{ adrNumber: string; score: number }>> {
+        try {
+            // SemanticSearchApi requires EmbeddingGenerator in constructor
+            const { EmbeddingGenerator } = await import('../../embedding/embedding-generator');
+            const embeddingGenerator = new EmbeddingGenerator();
+            
+            // Check if embedding generator is configured (requires OpenAI API key)
+            if (!embeddingGenerator.isConfigured()) {
+                // Semantic search not available, return empty array
+                return [];
+            }
+            
+            const semanticSearchApi = new SemanticSearchApi(this.dbManager, embeddingGenerator);
+            
+            // Build semantic query from module path and description
+            // Example: "dashboard/src/api/server.ts server api"
+            const moduleName = path.basename(module.file_path, path.extname(module.file_path));
+            const moduleDir = path.dirname(module.file_path);
+            // Build query from path components
+            const query = `${module.file_path} ${moduleName} ${moduleDir.split(path.sep).pop() || ''}`;
+            
+            // Search ADRs semantically (W-Dimension only)
+            const results = await semanticSearchApi.search(query, pluginId, {
+                dimensions: ['W'],
+                limit: 5,
+                minScore: threshold
+            });
+            
+            // Filter by threshold and extract ADR numbers
+            const matches: Array<{ adrNumber: string; score: number }> = [];
+            for (const result of results) {
+                if (result.score >= threshold) {
+                    // Extract ADR number from externalId (format: "ADR-072" or just "072")
+                    const adrNumberMatch = result.externalId.match(/ADR-?(\d+)/i);
+                    if (adrNumberMatch) {
+                        matches.push({
+                            adrNumber: adrNumberMatch[1],
+                            score: result.score
+                        });
+                    }
+                }
+            }
+            
+            return matches;
+        } catch (error: any) {
+            console.warn(`[GapAnalysisTool] Failed to find semantic ADR matches for ${module.file_path}: ${error?.message || String(error)}`);
+            return [];
+        }
+    }
+
+    /**
      * Calculates a gap score for prioritization.
      * Higher score = more urgent to document.
      * 
-     * Formula: (dependency_count * 2) - (adr_count * 10)
+     * Formula: (dependency_count * 2) - (adr_count * 10) - (hasApiDocs ? 50 : 0)
      * This prioritizes modules with many dependencies but few ADRs.
+     * Module mit API-Docs sind bereits dokumentiert, daher großer Penalty (-50).
+     * Da buildArchitecturalView nur Module aus X-Dimension zurückgibt, haben alle Module API-Docs.
      */
-    private calculateGapScore(dependencyCount: number, adrCount: number): number {
-        return (dependencyCount * 2) - (adrCount * 10);
+    private calculateGapScore(dependencyCount: number, adrCount: number, hasApiDocs: boolean = false): number {
+        const baseScore = (dependencyCount * 2) - (adrCount * 10);
+        // Module mit API-Docs sind dokumentiert, großer Penalty
+        // Da alle Module in buildArchitecturalView API-Docs haben, wird dieser Penalty immer angewendet
+        return hasApiDocs ? baseScore - 50 : baseScore;
     }
 
     /**
@@ -402,6 +494,10 @@ export class GapAnalysisTool {
                 const adrs = await adrRepo.findByFilePath(module.file_path, pluginId);
                 const dependencies = await depRepo.findByFromModule(module.file_path, pluginId);
                 
+                // WICHTIG: Module aus X-Dimension haben bereits API-Docs
+                // X-Dimension = docs/modules/ = alle Module haben bereits API-Docs
+                const hasApiDocs = true; // Module aus X-Dimension haben immer API-Docs
+                
                 const baseGap = {
                     module: {
                         file_path: module.file_path,
@@ -410,13 +506,29 @@ export class GapAnalysisTool {
                     dependency_count: depCount,
                     adr_count: adrs.length,
                     adr_numbers: adrs.map(adr => adr.adr_number),
-                    gap_score: this.calculateGapScore(depCount, adrs.length),
-                    has_adrs: adrs.length > 0
+                    has_api_docs: hasApiDocs, // Immer true für Module aus X-Dimension
+                    gap_score: this.calculateGapScore(depCount, adrs.length, hasApiDocs),
+                    has_adrs: adrs.length > 0,
+                    // Modul ist dokumentiert wenn es API-Docs ODER ADRs hat
+                    is_documented: hasApiDocs || adrs.length > 0
                 };
 
                 // Add context information for modules without ADRs
                 if (!baseGap.has_adrs) {
+                    // Try semantic fallback linking
+                    const semanticMatches = await this.findSemanticAdrMatches(module, pluginId, 0.4);
+                    
                     const context = await this.buildAdrGenerationContext(module, dependencies, pluginId);
+                    
+                    // Add semantic matches to context
+                    if (semanticMatches.length > 0) {
+                        context.semantic_adr_matches = semanticMatches.map(m => ({
+                            adr_number: m.adrNumber,
+                            score: m.score,
+                            match_type: "semantic_fallback"
+                        }));
+                    }
+                    
                     gaps.push({
                         ...baseGap,
                         context_for_adr_generation: context

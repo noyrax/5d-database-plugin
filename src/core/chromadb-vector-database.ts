@@ -17,7 +17,7 @@ export class ChromaDbVectorDatabase implements VectorDatabase {
     private chromaClient: any | null = null;
     private collection: any | null = null;
     private available: boolean = false;
-    private readonly embeddingDimensions: number = 1536;
+    private readonly embeddingDimensions: number = 1024;
     private readonly collectionName: string = 'embeddings';
 
     constructor(db: sqlite3.Database, workspaceRoot: string) {
@@ -200,8 +200,9 @@ export class ChromaDbVectorDatabase implements VectorDatabase {
                         continue;
                     }
 
-                    // Convert distance to similarity (ChromaDB uses cosine distance, 0 = identical, 1 = orthogonal)
-                    const similarity = 1 - Math.max(0, Math.min(1, distance));
+                    // Convert distance to similarity (ChromaDB uses cosine distance, 0 = identical, 2 = opposite)
+                    // Cosine similarity = 1 - (distance / 2), clamped to [0, 1]
+                    const similarity = Math.max(0, Math.min(1, 1 - (distance / 2)));
 
                     mappedResults.push({
                         rowid: rowid,

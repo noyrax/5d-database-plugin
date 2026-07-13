@@ -110,6 +110,31 @@ Für AI-Agenten und Entwickler stehen CLI-Tools für direkten Datenbank-Zugriff 
 
 **Hinweis:** Die Embedding-Pipeline wird automatisch bei der Ingestion ausgeführt, kann aber auch manuell via `noyrax-5d-database-embedding` ausgeführt werden (z.B. wenn ChromaDB nachträglich gestartet wurde).
 
+### Environment Variables
+
+Das System nutzt folgende Environment Variables (können in `.env` Datei oder als System-Environment-Variablen gesetzt werden):
+
+- **`OPENAI_API_KEY`** (erforderlich für Embeddings):
+  - API-Key für OpenAI (für Embedding-Generierung und optional Summarization)
+  - Wird automatisch aus `.env` Datei geladen
+  - Beispiel: `OPENAI_API_KEY=sk-...`
+
+- **`EMBEDDING_STRATEGY`** (optional, default: `optimize`):
+  - Strategie für große Module-Dokumentationen (>8000 Tokens)
+  - Mögliche Werte:
+    - `optimize` (default): Intelligente Kürzung - behält Struktur, entfernt Details
+    - `hierarchical`: Nur Struktur (Header, Namen, Signaturen) - Details in Y-Dimension
+    - `summarize`: LLM-basierte Summarization (erfordert `OPENAI_API_KEY`)
+  - Beispiel: `EMBEDDING_STRATEGY=summarize`
+
+**Token-Limit-Handling:**
+- OpenAI text-embedding-3-small hat ein Context-Length-Limit von 8192 Tokens
+- Große Module-Dokumentationen werden automatisch erkannt (>8000 Tokens)
+- Die gewählte Strategie wird automatisch angewendet
+- Bei Summarization-Fehlern: Automatischer Fallback auf Optimize-Strategie
+
+Siehe `docs/adr/021-embedding-system-generator-pipeline.md` für Details zu den Strategien.
+
 **Gap Analysis Tool:**
 
 Das `gap_analysis` Tool identifiziert systematisch Dokumentationslücken:

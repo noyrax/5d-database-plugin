@@ -12,6 +12,12 @@ export interface Symbol {
     signature_json: string;  // JSON string of signature
     signature_hash: string;  // Hash of signature for change detection
     summary: string | null;
+    start_line: number | null;  // Starting line number (1-indexed)
+    end_line: number | null;  // Ending line number (1-indexed, inclusive)
+    start_col: number | null;  // Starting column (0-indexed)
+    end_col: number | null;  // Ending column (0-indexed)
+    byte_offset_start: number | null;  // Byte offset start
+    byte_offset_end: number | null;  // Byte offset end
     deleted_at: Date | null;
     created_at: Date;
     updated_at: Date;

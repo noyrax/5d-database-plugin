@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "// WICHTIG: Diese Debug-Konfiguration ist OPTIONAL und nur für Extension-Entwicklung gedacht.",
+    "// Für produktives Testen wird die lokale Installation empfohlen (siehe QUICK_START.md).",
+    "// Der Debug-Modus ist nicht zuverlässig, da der Root-Ordner nicht automatisch geöffnet wird.",
+    "configurations": [
+        {
+            "name": "Run Extension (OPTIONAL - nur für Extension-Entwicklung)",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": [
+                "D:\\Datenbank für Noyrax"
+            ],
+            "extensionDevelopmentPath": "${workspaceFolder}",
+            "outFiles": [
+                "${workspaceFolder}/out/**/*.js"
+            ],
+            "preLaunchTask": "Compile Extension",
+            "sourceMaps": true,
+            "internalConsoleOptions": "openOnSessionStart"
+        }
+    ]
+}

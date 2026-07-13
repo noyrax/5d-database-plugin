@@ -13,14 +13,16 @@ export class ModuleRepository extends BaseRepositoryImpl<Module> {
 
     public async create(module: Module): Promise<Module> {
         await this.execute(
-            `INSERT INTO modules (id, plugin_id, file_path, content_hash, content_markdown, deleted_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO modules (id, plugin_id, file_path, content_hash, content_markdown, line_count, byte_size, deleted_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 module.id,
                 module.plugin_id,
                 module.file_path,
                 module.content_hash,
                 module.content_markdown,
+                module.line_count,
+                module.byte_size,
                 module.deleted_at,
                 module.created_at,
                 module.updated_at
@@ -58,12 +60,14 @@ export class ModuleRepository extends BaseRepositoryImpl<Module> {
     public async update(module: Module): Promise<Module> {
         await this.execute(
             `UPDATE modules 
-             SET file_path = ?, content_hash = ?, content_markdown = ?, deleted_at = ?, updated_at = ?
+             SET file_path = ?, content_hash = ?, content_markdown = ?, line_count = ?, byte_size = ?, deleted_at = ?, updated_at = ?
              WHERE id = ? AND plugin_id = ?`,
             [
                 module.file_path,
                 module.content_hash,
                 module.content_markdown,
+                module.line_count,
+                module.byte_size,
                 module.deleted_at,
                 module.updated_at,
                 module.id,
@@ -200,6 +204,8 @@ export class ModuleRepository extends BaseRepositoryImpl<Module> {
             file_path: row.file_path,
             content_hash: row.content_hash,
             content_markdown: row.content_markdown,
+            line_count: row.line_count !== null && row.line_count !== undefined ? row.line_count : null,
+            byte_size: row.byte_size !== null && row.byte_size !== undefined ? row.byte_size : null,
             deleted_at: row.deleted_at ? new Date(row.deleted_at) : null,
             created_at: new Date(row.created_at),
             updated_at: new Date(row.updated_at)

@@ -77,10 +77,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Load .env file from workspace root or parent directories
         outputChannel.appendLine('Loading .env file...');
         loadEnvFile(workspaceRoot);
-        if (process.env.OPENAI_API_KEY) {
-            outputChannel.appendLine('OpenAI API key loaded from .env file');
+        if (process.env.VOYAGE_API_KEY) {
+            outputChannel.appendLine('Voyage API key loaded from .env file');
         } else {
-            outputChannel.appendLine('WARNING: OPENAI_API_KEY not found in .env file or environment variables');
+            outputChannel.appendLine('WARNING: VOYAGE_API_KEY not found in .env file or environment variables (embeddings will be skipped)');
         }
 
         // Find docs directory across all workspace folders and parent directories

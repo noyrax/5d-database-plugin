@@ -71,10 +71,10 @@ export class VssManager {
      */
     private async createVirtualTable(): Promise<void> {
         return new Promise((resolve, reject) => {
-            // VSS virtual table: embedding_vector(1536) - 1536 dimensions
+            // VSS virtual table: embedding_vector(1024) - Voyage voyage-3.5 dimensions
             this.db.run(
                 `CREATE VIRTUAL TABLE embeddings_vss USING vss0(
-                    embedding_vector(1536),
+                    embedding_vector(1024),
                     rowid HIDDEN
                 )`,
                 (err) => {
