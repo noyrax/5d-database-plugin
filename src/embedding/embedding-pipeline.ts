@@ -48,7 +48,14 @@ export class EmbeddingPipeline {
         console.log(`[EmbeddingPipeline] Starting embedding sync for plugin ${pluginId}`);
 
         if (!this.embeddingGenerator.isConfigured()) {
-            console.warn('[EmbeddingPipeline] Embedding generator not configured. Skipping sync.');
+            // Loud, actionable warning: a silent skip here is exactly how a system ends
+            // up with a vectors.db that exists but has ZERO embeddings, while readiness
+            // checks still report "ready". Make the consequence explicit.
+            console.error(
+                '[EmbeddingPipeline] ⚠ Embedding provider NOT configured (missing VOYAGE_API_KEY). ' +
+                'Skipping embedding sync — semantic_discovery and the V-dimension will return NO results ' +
+                'until embeddings are generated. Set VOYAGE_API_KEY in the workspace .env and re-run the ingest.'
+            );
             return;
         }
 

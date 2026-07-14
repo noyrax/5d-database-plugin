@@ -92,7 +92,11 @@ export class VectorBackendStatusApi {
         const vectorDb = this.dbManager.getVectorDatabase();
         
         if (!vectorDb) {
-            // Vector database not initialized
+            // The V-dimension database has not been opened in THIS process yet.
+            // This is NOT the same as the vector package being missing: callers must
+            // open the V dimension (e.g. dbManager.getDatabase('V')) before treating
+            // this as "not installed". Only if it still resolves to none afterwards is
+            // the backend genuinely unavailable.
             return {
                 backend: 'none',
                 mode: expectedMode,
@@ -100,7 +104,10 @@ export class VectorBackendStatusApi {
                 reachable: false,
                 fallback: true,
                 reason_code: ReasonCode.NOT_INSTALLED,
-                description: 'Vector database not initialized. V-dimension database may not be opened yet.',
+                description:
+                    'Vector backend not initialized: the V-dimension database has not been opened in this process yet. ' +
+                    'This does not necessarily mean the vector package is missing — open the V dimension first and re-check. ' +
+                    'If it still reports as unavailable afterwards, the backend package (e.g. chromadb / sqlite-vss) is genuinely not usable on this platform.',
                 platform: `${platform}/${arch}`,
                 action_hints: this.getActionHintsForReason(ReasonCode.NOT_INSTALLED, expectedMode, platform)
             };
